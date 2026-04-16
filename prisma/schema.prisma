@@ -1,0 +1,130 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum StorySourceType {
+  manual
+  ai_chat
+}
+
+enum NarrationSourceType {
+  ai_generated
+  uploaded
+  recorded
+}
+
+enum ProjectStatus {
+  draft
+  generating_script
+  generating_scenes
+  generating_images
+  generating_audio
+  ready_to_render
+  rendering
+  completed
+  failed
+}
+
+enum AssetType {
+  image
+  audio
+  subtitle
+  music
+  video
+  waveform
+}
+
+model User {
+  id        String     @id @default(uuid())
+  email     String     @unique
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+  projects  Project[]
+  settings  Settings?
+}
+
+model Project {
+  id                  String              @id @default(uuid())
+  userId              String
+  title               String
+  genre               String
+  language            String
+  targetDurationSec   Int
+  aspectRatio         String              @default("16:9")
+  script              String              @default("")
+  storySourceType     StorySourceType
+  narrationSourceType NarrationSourceType @default(ai_generated)
+  status              ProjectStatus       @default(draft)
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime            @updatedAt
+  user                User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  scenes              Scene[]
+  assets              Asset[]
+  renderJobs          RenderJob[]
+}
+
+model Scene {
+  id                String   @id @default(uuid())
+  projectId         String
+  order             Int
+  narrationText     String
+  subtitleText      String
+  visualDescription String
+  imagePrompt       String
+  durationSec       Float
+  imageUrl          String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  project           Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  assets            Asset[]
+
+  @@index([projectId, order])
+}
+
+model Asset {
+  id           String   @id @default(uuid())
+  projectId    String
+  sceneId      String?
+  type         AssetType
+  provider     String?
+  url          String?
+  localPath    String?
+  metadataJson Json?
+  createdAt    DateTime @default(now())
+  project      Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  scene        Scene?   @relation(fields: [sceneId], references: [id], onDelete: SetNull)
+
+  @@index([projectId, type])
+}
+
+model RenderJob {
+  id           String   @id @default(uuid())
+  projectId    String
+  status       String
+  progress     Int      @default(0)
+  outputUrl    String?
+  outputPath   String?
+  errorMessage String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  project      Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, status])
+}
+
+model Settings {
+  id                     String   @id @default(uuid())
+  userId                 String   @unique
+  defaultVoiceId         String?
+  defaultElevenLabsModel String?
+  defaultAspectRatio     String?
+  defaultSubtitleStyle   String?
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+  user                   User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}

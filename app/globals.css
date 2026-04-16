@@ -1,0 +1,53 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: 222 47% 7%;
+  --foreground: 210 40% 98%;
+  --card: 224 38% 12%;
+  --card-foreground: 210 40% 96%;
+  --popover: 224 38% 12%;
+  --popover-foreground: 210 40% 96%;
+  --primary: 28 93% 58%;
+  --primary-foreground: 20 14% 10%;
+  --secondary: 214 32% 22%;
+  --secondary-foreground: 210 40% 98%;
+  --muted: 217 24% 18%;
+  --muted-foreground: 214 20% 74%;
+  --accent: 198 93% 60%;
+  --accent-foreground: 222 47% 10%;
+  --destructive: 0 84% 60%;
+  --destructive-foreground: 210 40% 98%;
+  --border: 216 28% 22%;
+  --input: 216 28% 22%;
+  --ring: 28 93% 58%;
+  --radius: 1rem;
+  --font-sans: "Manrope";
+  --font-display: "Cormorant Garamond";
+}
+
+* {
+  @apply border-border;
+}
+
+html,
+body {
+  @apply min-h-full bg-background text-foreground antialiased;
+}
+
+body {
+  background-image: radial-gradient(circle at top, rgba(56, 189, 248, 0.18), transparent 22%), linear-gradient(180deg, rgba(15, 23, 42, 0.98), rgba(2, 6, 23, 1));
+}
+
+a {
+  @apply text-inherit no-underline;
+}
+
+.glass-panel {
+  @apply border border-white/10 bg-white/5 backdrop-blur-xl;
+}
+
+.subtitle-pill {
+  @apply inline-flex rounded-xl bg-black/55 px-4 py-2 text-sm font-medium text-white shadow-soft;
+}
