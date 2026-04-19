@@ -39,7 +39,7 @@ export function ProjectList() {
       <CardHeader className="flex-row items-center justify-between">
         <div>
           <CardTitle>Projects</CardTitle>
-          <CardDescription>Recent story video projects and current workflow state.</CardDescription>
+          <CardDescription>Your recent video projects and where each one is in the pipeline.</CardDescription>
         </div>
         <Button asChild>
           <Link href="/projects/new">Create project</Link>

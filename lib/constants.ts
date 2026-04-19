@@ -4,6 +4,7 @@ export const APP_NAME = "StoryFlow Studio";
 
 export const sidebarItems = [
   { href: "/", label: "Dashboard" },
+  { href: "/auto-pilot", label: "Auto-Pilot" },
   { href: "/projects/new", label: "New Project" },
   { href: "/script-studio", label: "Script Studio" },
   { href: "/voice-studio", label: "Voice Studio" },

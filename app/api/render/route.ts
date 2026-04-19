@@ -14,8 +14,8 @@ export async function POST(request: Request) {
       aspectRatio: body.aspectRatio,
       scenes: body.scenes,
       narrationAudioPath: body.narrationAudioPath,
-      subtitlesPath,
-      backgroundMusicPath: body.backgroundMusicPath
+      musicPath: body.backgroundMusicPath ?? null,
+      subtitlesPath
     });
 
     return NextResponse.json({ outputPath, subtitlesPath });

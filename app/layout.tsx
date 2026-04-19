@@ -15,7 +15,7 @@ const cormorant = Cormorant_Garamond({
 
 export const metadata: Metadata = {
   title: "StoryFlow Studio",
-  description: "Automated YouTube story video creation studio"
+  description: "AI-powered video creation studio — stories, reels, shorts, vlogs, and more."
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

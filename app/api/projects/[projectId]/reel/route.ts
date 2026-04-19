@@ -5,10 +5,12 @@ import { db } from "@/lib/db";
 import { getEnv } from "@/lib/env";
 import { GeminiService, SubtitleService, VideoRenderService } from "@/lib/services";
 import type { SubtitleChunk } from "@/types";
+import { requireUser, UnauthorizedError } from "@/lib/auth";
+import { getUserAiKeys } from "@/lib/user-keys";
+import { uploadLocalFile } from "@/lib/storage";
 
 const subtitleService = new SubtitleService();
 const videoRenderService = new VideoRenderService();
-const geminiService = new GeminiService();
 const env = getEnv();
 const REEL_DURATION_SEC = 30;
 
@@ -50,10 +52,14 @@ export async function POST(
   { params }: { params: { projectId: string } }
 ) {
   try {
+    const user = await requireUser();
+    const keys = await getUserAiKeys(user.id);
+    const geminiService = new GeminiService(keys.geminiApiKey);
+
     const body = await request.json().catch(() => ({}));
     const startSec = Math.max(0, Number(body.startSec ?? 0));
-    const project = await db.project.findUnique({
-      where: { id: params.projectId },
+    const project = await db.project.findFirst({
+      where: { id: params.projectId, userId: user.id },
       include: {
         scenes: { orderBy: { order: "asc" } },
         assets: { orderBy: { createdAt: "desc" } }
@@ -91,16 +97,16 @@ export async function POST(
 
         return {
           sceneNumber: scene.order,
-          narration: scene.narrationText,
           subtitle: scene.subtitleText,
-          visualDescription: scene.visualDescription,
-          imagePrompt: scene.imagePrompt,
           durationSec: Math.max(1, overlapEnd - overlapStart),
-          imageUrl: imageAsset?.localPath ?? null
+          imagePath: imageAsset?.localPath ?? null,
+          videoClipPath: null,
+          cameraMotion: (scene.cameraMotion as never) ?? "zoomIn",
+          transition: (scene.transition as never) ?? "fade"
         };
       });
 
-    if (!reelScenes.length || reelScenes.some((scene) => !scene.imageUrl)) {
+    if (!reelScenes.length || reelScenes.some((scene) => !scene.imagePath)) {
       return NextResponse.json(
         { error: "All reel scenes need images before reel generation" },
         { status: 400 }
@@ -137,13 +143,18 @@ export async function POST(
       projectId: params.projectId,
       aspectRatio: "9:16",
       scenes: reelScenes,
-      narrationAudioPath: audioAsset.localPath,
+      narrationAudioPath: audioAsset.localPath!,
       subtitlesPath,
       includeSubtitles: body.includeSubtitles !== false,
-      audioStartSec: startSec,
-      audioDurationSec: clipDurationSec,
       outputFileName: "reel-30s.mp4"
-    } as Parameters<VideoRenderService["renderProject"]>[0]);
+    });
+
+    const reelStoragePath = `projects/${params.projectId}/renders/${path.basename(outputPath)}`;
+    await uploadLocalFile({
+      localPath: outputPath,
+      objectPath: reelStoragePath,
+      contentType: "video/mp4"
+    });
 
     const reelAsset = await db.asset.create({
       data: {
@@ -151,7 +162,7 @@ export async function POST(
         type: "video",
         provider: "ffmpeg",
         localPath: outputPath,
-        url: outputPath,
+        url: reelStoragePath,
         metadataJson: {
           kind: "reel",
           durationSec: clipDurationSec,
@@ -165,6 +176,9 @@ export async function POST(
       reelUrl: `/api/assets/${reelAsset.id}`
     });
   } catch (error) {
+    if (error instanceof UnauthorizedError) {
+      return NextResponse.json({ error: error.message }, { status: 401 });
+    }
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Reel generation failed" },
       { status: 500 }

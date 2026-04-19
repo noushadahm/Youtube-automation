@@ -2,7 +2,11 @@ import { GeminiService } from "@/lib/services/gemini-service";
 import type { ScenePlan, StoryPlan } from "@/types";
 
 export class SceneService {
-  private geminiService = new GeminiService();
+  private geminiService: GeminiService;
+
+  constructor(geminiApiKey?: string) {
+    this.geminiService = new GeminiService(geminiApiKey);
+  }
 
   async planScenes(input: {
     title: string;

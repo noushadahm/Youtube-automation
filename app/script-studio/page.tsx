@@ -24,7 +24,7 @@ export default async function ScriptStudioPage({
         <ScriptEditor project={project} />
       </div>
       <div className="mt-6">
-        <SceneCards />
+        <SceneCards project={project} />
       </div>
     </AppShell>
   );

@@ -1,11 +1,11 @@
-import fs from "node:fs/promises";
-import path from "node:path";
-import { getEnv } from "@/lib/env";
 import { GeminiService } from "@/lib/services/gemini-service";
 
 export class ImageGenerationService {
-  private geminiService = new GeminiService();
-  private env = getEnv();
+  private geminiService: GeminiService;
+
+  constructor(geminiApiKey?: string, imageModel?: string) {
+    this.geminiService = new GeminiService(geminiApiKey, imageModel);
+  }
 
   async generateAndStoreImage(input: {
     projectId: string;

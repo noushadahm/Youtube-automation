@@ -10,85 +10,66 @@ interface CreateProjectInput {
   targetDurationSec: number;
   aspectRatio: AspectRatio;
   storySourceType: StorySourceType;
+  hookText?: string;
 }
 
 export class ProjectService {
-  async listProjects() {
+  async listProjects(userId?: string) {
     return db.project.findMany({
+      where: userId ? { userId } : undefined,
       include: {
         assets: {
-          orderBy: {
-            createdAt: "desc"
-          },
+          orderBy: { createdAt: "desc" },
           take: 5
         },
         scenes: {
-          orderBy: {
-            order: "asc"
-          }
+          orderBy: { order: "asc" }
         },
         renderJobs: {
-          orderBy: {
-            createdAt: "desc"
-          },
+          orderBy: { createdAt: "desc" },
           take: 1
         }
       },
-      orderBy: {
-        updatedAt: "desc"
-      }
+      orderBy: { updatedAt: "desc" }
     });
   }
 
-  async getProjectById(projectId: string) {
-    return db.project.findUnique({
-      where: { id: projectId },
+  async getProjectById(projectId: string, userId?: string) {
+    return db.project.findFirst({
+      where: { id: projectId, ...(userId ? { userId } : {}) },
       include: {
         assets: {
-          orderBy: {
-            createdAt: "desc"
-          },
+          orderBy: { createdAt: "desc" },
           take: 20
         },
         scenes: {
-          orderBy: {
-            order: "asc"
-          }
+          orderBy: { order: "asc" }
         },
         renderJobs: {
-          orderBy: {
-            createdAt: "desc"
-          },
+          orderBy: { createdAt: "desc" },
           take: 5
         }
       }
     });
   }
 
-  async getLatestProject() {
+  async getLatestProject(userId?: string) {
     return db.project.findFirst({
+      where: userId ? { userId } : undefined,
       include: {
         assets: {
-          orderBy: {
-            createdAt: "desc"
-          },
+          orderBy: { createdAt: "desc" },
           take: 20
         },
         scenes: {
-          orderBy: {
-            order: "asc"
-          }
+          orderBy: { order: "asc" }
         },
         renderJobs: {
-          orderBy: {
-            createdAt: "desc"
-          },
+          orderBy: { createdAt: "desc" },
           take: 5
         }
       },
-      orderBy: {
-        updatedAt: "desc"
-      }
+      orderBy: { updatedAt: "desc" }
     });
   }
 
@@ -101,7 +82,8 @@ export class ProjectService {
         language: input.language,
         targetDurationSec: input.targetDurationSec,
         aspectRatio: input.aspectRatio,
-        storySourceType: input.storySourceType
+        storySourceType: input.storySourceType,
+        hookText: input.hookText ?? ""
       }
     });
   }

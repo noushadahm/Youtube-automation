@@ -88,19 +88,19 @@ export function AIChatPanel({ project }: AIChatPanelProps) {
     <Card className="h-full">
       <CardHeader>
         <CardTitle>AI Script Chat</CardTitle>
-        <CardDescription>Generate or refine a story script from a guided prompt conversation.</CardDescription>
+        <CardDescription>
+          Describe your video topic and angle. For current events, news, or
+          trending subjects, the AI will search the web for fresh information
+          before writing.
+        </CardDescription>
       </CardHeader>
       <CardContent>
-        <div className="mb-4 space-y-3 rounded-2xl border border-white/10 bg-black/20 p-4">
-          <div className="rounded-2xl bg-white/5 p-3 text-sm text-slate-200">
-            Create a suspenseful mystery story for a 5 minute YouTube narration with a lonely lighthouse keeper.
-          </div>
-          <div className="rounded-2xl bg-amber-500/10 p-3 text-sm text-amber-50">
-            The assistant will generate structured JSON script output through the backend OpenAI route and keep the raw prompt on the server.
-          </div>
-        </div>
         <Textarea
-          placeholder="Describe the story premise, tone, audience, and hook..."
+          placeholder={`Describe your ${project?.genre ?? "video"}: topic, angle, audience, and hook. Example:
+• "3-minute explainer on why the dollar is weakening, for retail investors"
+• "60s Shorts on the latest Israel-Iran escalation, news-anchor tone"
+• "5-minute horror story in a disused subway station, slow-burn"`}
+          rows={5}
           value={prompt}
           onChange={(event) => setPrompt(event.target.value)}
         />

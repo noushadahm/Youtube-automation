@@ -3,6 +3,7 @@ import path from "node:path";
 import { z } from "zod";
 import { getEnv } from "@/lib/env";
 import { deriveSceneCount } from "@/lib/utils";
+import { uploadBuffer } from "@/lib/storage";
 import type { StoryPlan, SubtitleChunk } from "@/types";
 
 const scenePlanSchema = z.object({
@@ -32,17 +33,54 @@ const subtitleChunkSchema = z.object({
   )
 });
 
+// Ordered list of model names to try if the configured one 404s.
+// When Gemini renames / deprecates a model, one of these usually still works.
+const IMAGE_MODEL_FALLBACKS = [
+  "gemini-2.5-flash-image",
+  "gemini-2.5-flash-image-preview",
+  "gemini-2.0-flash-preview-image-generation",
+  "gemini-2.0-flash-exp-image-generation"
+];
+
 export class GeminiService {
   private env = getEnv();
   private textModel = "gemini-2.5-flash";
-  private imageModel = "gemini-2.5-flash-image";
+  private readonly configuredImageModel: string | undefined;
+  private readonly explicitKey?: string;
+
+  constructor(apiKey?: string, imageModel?: string) {
+    this.explicitKey = apiKey;
+    this.configuredImageModel = imageModel?.trim() || undefined;
+  }
+
+  /**
+   * Candidate image models in priority order:
+   *   1. user-configured (from Settings)
+   *   2. GA'd Gemini image (current)
+   *   3. older previews as defensive fallbacks
+   */
+  private get imageModelCandidates(): string[] {
+    const seen = new Set<string>();
+    const list: string[] = [];
+    if (this.configuredImageModel) {
+      list.push(this.configuredImageModel);
+      seen.add(this.configuredImageModel);
+    }
+    for (const m of IMAGE_MODEL_FALLBACKS) {
+      if (!seen.has(m)) {
+        list.push(m);
+        seen.add(m);
+      }
+    }
+    return list;
+  }
 
   private get apiKey() {
-    if (!this.env.geminiApiKey) {
-      throw new Error("GEMINI_API_KEY is not configured.");
+    const key = this.explicitKey ?? this.env.geminiApiKey;
+    if (!key) {
+      throw new Error("Gemini API key not set. Add it under Settings, or set GEMINI_API_KEY.");
     }
-
-    return this.env.geminiApiKey;
+    return key;
   }
 
   async generateScenes(input: {
@@ -67,20 +105,22 @@ export class GeminiService {
               parts: [
                 {
                   text: [
-                    "Split this story into scene-based video beats for a YouTube narration project.",
+                    "Split this narration into scene-based video beats.",
                     "Return only structured JSON matching the provided schema.",
                     `Title: ${input.title}`,
-                    `Genre: ${input.genre}`,
+                    `Genre / content type: ${input.genre}`,
                     `Language: ${input.language}`,
-                    `Target duration seconds: ${input.targetDurationSec}`,
-                    `Target scene count: ${deriveSceneCount(input.targetDurationSec)}`,
+                    `Target total duration (seconds): ${input.targetDurationSec}`,
+                    `Approximate scene count target: ${deriveSceneCount(input.targetDurationSec)} (adjust up or down as content needs)`,
                     `Global style suffix: ${input.styleSuffix}`,
                     "Rules:",
-                    "- Keep subtitles shorter than narration.",
-                    "- Make each image prompt cinematic and story-specific.",
-                    "- Preserve character and environment consistency across all prompts.",
-                    "- Aim for one scene every 10 to 15 seconds.",
-                    `Story:\n${input.story}`
+                    "- VARY scene durations based on content. Fast beats 2-4s; normal 4-8s; longer emotional/complex beats 8-15s. Never make every scene the same length.",
+                    "- The SUM of durationSec must approximately equal the target total duration.",
+                    "- Scene 1 is the HOOK — the most visually striking beat.",
+                    "- Final scene supports the CTA.",
+                    "- Subtitles shorter than narration.",
+                    "- Image prompts cinematic, specific, visually concrete, consistent characters/environment.",
+                    `Script:\n${input.story}`
                   ].join("\n")
                 }
               ]
@@ -142,31 +182,82 @@ export class GeminiService {
     projectId: string;
     sceneNumber: number;
   }) {
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${this.imageModel}:generateContent`,
-      {
-        method: "POST",
-        headers: {
-          "x-goog-api-key": this.apiKey,
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          contents: [
-            {
-              parts: [
-                {
-                  text: `Generate a cinematic story illustration. Return an image.\n${input.prompt}`
-                }
-              ]
-            }
-          ]
-        })
-      }
-    );
+    // Gemini image-capable models require an explicit responseModalities
+    // hint in generationConfig. Without it, the model returns text and the
+    // route throws "no image data".
+    //
+    // We walk the candidate list so a single renamed / unavailable model
+    // doesn't break the whole pipeline — if the configured model 404s, the
+    // next known-good one is tried automatically.
+    const candidates = this.imageModelCandidates;
+    let response: Response | null = null;
+    let payload: {
+      error?: { message?: string; code?: number };
+      candidates?: Array<{ content?: { parts?: Array<{ inlineData?: { data?: string; mimeType?: string } }> } }>;
+    } | null = null;
+    let modelUsed: string | null = null;
+    const errors: string[] = [];
 
-    const payload = await response.json();
-    if (!response.ok) {
-      throw new Error(payload.error?.message ?? "Gemini image generation failed");
+    for (const model of candidates) {
+      const res = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
+        {
+          method: "POST",
+          headers: {
+            "x-goog-api-key": this.apiKey,
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            contents: [
+              {
+                parts: [
+                  {
+                    text: `Cinematic, photo-realistic illustration. ${input.prompt}`
+                  }
+                ]
+              }
+            ],
+            generationConfig: {
+              responseModalities: ["IMAGE", "TEXT"]
+            }
+          })
+        }
+      );
+
+      const body = await res.json();
+      if (res.ok) {
+        response = res;
+        payload = body;
+        modelUsed = model;
+        break;
+      }
+
+      const msg = body?.error?.message ?? `HTTP ${res.status}`;
+      errors.push(`${model}: ${msg}`);
+      // If it's a "model not found / not supported" error, try the next one.
+      // For any other kind of failure (quota, auth, etc.), fail fast.
+      const notFoundish =
+        res.status === 404 ||
+        /not found|not supported|NOT_FOUND/i.test(msg);
+      if (!notFoundish) {
+        console.error(`[gemini-image] model=${model} status=${res.status} error=${msg}`);
+        throw new Error(msg);
+      }
+    }
+
+    if (!response || !payload || !modelUsed) {
+      const combined = errors.join(" | ");
+      console.error(`[gemini-image] no model succeeded. tried: ${combined}`);
+      throw new Error(
+        `No Gemini image model is available to this key. Tried: ${combined}. ` +
+        `Set a valid model in Settings → Gemini image model.`
+      );
+    }
+
+    if (modelUsed !== (this.configuredImageModel ?? candidates[0])) {
+      console.warn(
+        `[gemini-image] configured model unavailable, fell back to '${modelUsed}'`
+      );
     }
 
     const imagePart = payload.candidates?.[0]?.content?.parts?.find(
@@ -177,13 +268,21 @@ export class GeminiService {
       throw new Error("Gemini returned no image data.");
     }
 
+    const mimeType = imagePart.inlineData.mimeType ?? "image/png";
+    const extension = mimeType === "image/png" ? "png" : "jpg";
+    const buffer = Buffer.from(imagePart.inlineData.data, "base64");
+
+    // Write to local ephemeral path so FFmpeg can consume it during render.
     const outputDir = path.join(this.env.mediaRoot, input.projectId, "images");
     await fs.mkdir(outputDir, { recursive: true });
-    const extension = imagePart.inlineData.mimeType === "image/png" ? "png" : "jpg";
     const outputPath = path.join(outputDir, `scene-${input.sceneNumber}.${extension}`);
-    await fs.writeFile(outputPath, Buffer.from(imagePart.inlineData.data, "base64"));
+    await fs.writeFile(outputPath, buffer);
 
-    return { localPath: outputPath, url: outputPath };
+    // Persistent copy in Supabase Storage.
+    const objectPath = `projects/${input.projectId}/images/scene-${input.sceneNumber}.${extension}`;
+    await uploadBuffer({ path: objectPath, buffer, contentType: mimeType });
+
+    return { localPath: outputPath, url: objectPath, storagePath: objectPath };
   }
 
   private async uploadFile(filePath: string, mimeType: string) {

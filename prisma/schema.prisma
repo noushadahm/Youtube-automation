@@ -1,21 +1,28 @@
 generator client {
-  provider = "prisma-client-js"
+  provider        = "prisma-client-js"
+  previewFeatures = ["multiSchema"]
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+  schemas   = ["storyflow"]
 }
 
 enum StorySourceType {
   manual
   ai_chat
+
+  @@schema("storyflow")
 }
 
 enum NarrationSourceType {
   ai_generated
   uploaded
   recorded
+
+  @@schema("storyflow")
 }
 
 enum ProjectStatus {
@@ -28,6 +35,8 @@ enum ProjectStatus {
   rendering
   completed
   failed
+
+  @@schema("storyflow")
 }
 
 enum AssetType {
@@ -37,6 +46,8 @@ enum AssetType {
   music
   video
   waveform
+
+  @@schema("storyflow")
 }
 
 model User {
@@ -46,6 +57,9 @@ model User {
   updatedAt DateTime   @updatedAt
   projects  Project[]
   settings  Settings?
+
+  @@map("sf_users")
+  @@schema("storyflow")
 }
 
 model Project {
@@ -57,6 +71,13 @@ model Project {
   targetDurationSec   Int
   aspectRatio         String              @default("16:9")
   script              String              @default("")
+  // Big on-screen hook displayed in the first ~3 seconds of the video.
+  // Drives retention on Shorts / Reels / TikTok.
+  hookText            String              @default("")
+  // Master style directive appended to every scene's image prompt AND to the
+  // cover/thumbnail prompt. E.g. "2D cel-shaded cartoon", "photo-realistic 3D
+  // render", "vintage oil painting". Empty = no override.
+  imageStylePrompt    String              @default("")
   storySourceType     StorySourceType
   narrationSourceType NarrationSourceType @default(ai_generated)
   status              ProjectStatus       @default(draft)
@@ -66,6 +87,9 @@ model Project {
   scenes              Scene[]
   assets              Asset[]
   renderJobs          RenderJob[]
+
+  @@map("sf_projects")
+  @@schema("storyflow")
 }
 
 model Scene {
@@ -78,16 +102,24 @@ model Scene {
   imagePrompt       String
   durationSec       Float
   imageUrl          String?
+  // Ken-Burns style camera motion applied to the still image for this scene.
+  // One of: none | zoomIn | zoomOut | panLeft | panRight | panUp | panDown
+  cameraMotion      String   @default("zoomIn")
+  // Transition used when this scene ends into the next.
+  // One of: cut | fade | dissolve
+  transition        String   @default("fade")
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
   project           Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
   assets            Asset[]
 
   @@index([projectId, order])
+  @@map("sf_scenes")
+  @@schema("storyflow")
 }
 
 model Asset {
-  id           String   @id @default(uuid())
+  id           String    @id @default(uuid())
   projectId    String
   sceneId      String?
   type         AssetType
@@ -95,11 +127,13 @@ model Asset {
   url          String?
   localPath    String?
   metadataJson Json?
-  createdAt    DateTime @default(now())
-  project      Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  scene        Scene?   @relation(fields: [sceneId], references: [id], onDelete: SetNull)
+  createdAt    DateTime  @default(now())
+  project      Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  scene        Scene?    @relation(fields: [sceneId], references: [id], onDelete: SetNull)
 
   @@index([projectId, type])
+  @@map("sf_assets")
+  @@schema("storyflow")
 }
 
 model RenderJob {
@@ -115,16 +149,40 @@ model RenderJob {
   project      Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
   @@index([projectId, status])
+  @@map("sf_render_jobs")
+  @@schema("storyflow")
 }
 
 model Settings {
   id                     String   @id @default(uuid())
   userId                 String   @unique
+  // Per-user AI provider API keys. When present, these override server env vars.
+  openAiApiKey           String?
+  geminiApiKey           String?
+  elevenLabsApiKey       String?
+  // Model overrides (optional — leave blank for sensible defaults).
+  // Image-to-video uses Google Veo via the Gemini API (no extra key needed).
+  geminiImageModel       String?
+  geminiVideoModel       String?
+  // Optional news / web-grounding keys. Used by the script generator to pull
+  // fresh facts for current-events videos. Any one is sufficient; Tavily is
+  // preferred because its results are LLM-optimised.
+  tavilyApiKey           String?
+  newsApiKey             String?
+  // Voice / model defaults
   defaultVoiceId         String?
   defaultElevenLabsModel String?
+  // ElevenLabs voice tuning (0–1 floats). Affects naturalness vs. consistency.
+  voiceStability         Float?
+  voiceSimilarityBoost   Float?
+  voiceStyle             Float?
+  voiceSpeakerBoost      Boolean?
   defaultAspectRatio     String?
   defaultSubtitleStyle   String?
   createdAt              DateTime @default(now())
   updatedAt              DateTime @updatedAt
   user                   User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sf_settings")
+  @@schema("storyflow")
 }

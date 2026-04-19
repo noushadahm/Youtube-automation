@@ -1,137 +1,133 @@
 # StoryFlow Studio
 
-StoryFlow Studio is a production-oriented MVP scaffold for automated YouTube story video creation. It includes a Next.js App Router frontend, modular backend services, Prisma/PostgreSQL models, BullMQ worker scaffolding, OpenAI and ElevenLabs integrations, and an FFmpeg-based render pipeline foundation.
+Automated YouTube story video pipeline: script → scenes → images → narration → subtitles → rendered MP4.
+
+## Architecture
+
+```
+            ┌──────────────────┐
+ Browser →  │  Next.js (web)   │ ─── fast calls (script gen, scene gen, image gen, TTS)
+            └──────────────────┘       │
+                     │                 ▼
+                     │          Supabase Postgres + Storage
+                     │                 ▲
+                     ▼                 │
+               BullMQ queue     ──▶ Worker process (npm run worker)
+               (Redis)                 │
+                                       ▼
+                                FFmpeg render → Supabase Storage
+```
+
+- **Web** handles auth, settings, script/scene/image/voice generation inline.
+- **Worker** handles the heavy video render via BullMQ so a long render doesn't tie up the HTTP request.
 
 ## Stack
 
-- Next.js 14 App Router
-- TypeScript
-- Tailwind CSS
-- shadcn-style UI components
-- Prisma + PostgreSQL
-- BullMQ + Redis
-- FFmpeg render pipeline helpers
-- Zustand editor state
+- Next.js 14 (App Router) + TypeScript + Tailwind
+- Prisma → Supabase Postgres (schema `storyflow`, all tables prefixed `sf_`)
+- Supabase Auth + Storage (`sf-media` bucket, auto-created)
+- BullMQ + Redis for background render jobs
+- FFmpeg (via `spawn`) for rendering
+- OpenAI / Gemini / ElevenLabs — each user brings their own keys in Settings
 
-## Features in this MVP scaffold
+## Prerequisites
 
-- Create projects from manual script input or AI-assisted script generation
-- Script chat and rewrite UI scaffolding
-- Structured scene generation JSON flow
-- Image generation service abstraction with retries
-- ElevenLabs TTS integration through backend routes only
-- Manual audio upload and in-browser recording UI scaffolding
-- Subtitle chunking and SRT export utilities
-- Video editor and export dashboard structure
-- Background worker entrypoint for long-running jobs
+- Node.js 20+
+- `ffmpeg` + `ffprobe` on PATH
+- Redis — `brew install redis` (macOS), `apt install redis-server` (Ubuntu), or `docker compose up -d`
+- A Supabase project (free tier is fine)
 
-## Folder structure
-
-```txt
-app/
-  api/
-  exports/
-  image-studio/
-  projects/new/
-  scene-studio/
-  script-studio/
-  settings/
-  video-editor/
-  voice-studio/
-components/
-  dashboard/
-  forms/
-  layout/
-  studio/
-  ui/
-lib/
-  ffmpeg/
-  prompts/
-  services/
-  store/
-prisma/
-types/
-workers/
-```
-
-## Environment setup
-
-1. Copy `.env.example` to `.env.local`.
-2. Fill in your real secrets only in `.env.local`.
-3. Start PostgreSQL and Redis locally.
-4. Ensure `ffmpeg` is installed and accessible in your shell.
-
-Required variables:
+## Local run
 
 ```bash
-OPENAI_API_KEY=
-GEMINI_API_KEY=
-ELEVENLABS_API_KEY=
-ELEVENLABS_VOICE_ID=
-ELEVENLABS_MODEL=
-DATABASE_URL=
-REDIS_URL=
-MEDIA_ROOT=
-FFMPEG_PATH=
-```
-
-## Local run instructions
-
-Start local infrastructure:
-
-```bash
-docker compose up -d
-```
-
-This brings up:
-
-- PostgreSQL on `localhost:5432`
-- Redis on `localhost:6379`
-- Adminer on `http://localhost:8080`
-
-Adminer login:
-
-- System: `PostgreSQL`
-- Server: `postgres`
-- Username: `appuser`
-- Password: `secret123`
-- Database: `appdb`
-
-Then run the app:
-
-```bash
+# 1. Deps
 npm install
 npm run db:generate
+
+# 2. Start Redis (pick one)
+brew services start redis             # macOS
+sudo systemctl enable --now redis-server   # Ubuntu
+docker compose up -d                   # Docker
+
+# 3. Push schema (creates storyflow schema + sf_* tables in Supabase)
 npx prisma db push
+
+# 4. Run web + worker in two terminals
 npm run dev
-```
-
-Run workers in a second terminal:
-
-```bash
+# in another terminal:
 npm run worker
 ```
 
+Open <http://localhost:3000>, sign up, paste your AI keys under **Settings**, and go.
+
+## Environment
+
+Copy `.env.example` → `.env.local` and fill in:
+
+- **AI provider defaults**: `OPENAI_API_KEY`, `GEMINI_API_KEY`, `ELEVENLABS_*`
+  *These are fallbacks — each user overrides with their own keys in Settings.*
+- **Supabase**: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_STORAGE_BUCKET`
+- **Prisma**: `DATABASE_URL` (pooler, port 6543), `DIRECT_URL` (port 5432 for migrations)
+- **Redis**: `REDIS_URL` (default `redis://127.0.0.1:6379`)
+- **Runtime**: `MEDIA_ROOT` (scratch dir for FFmpeg), `FFMPEG_PATH`
+
+`.env` (used by Prisma CLI and worker) only needs `DATABASE_URL` and `DIRECT_URL`.
+
+## Table layout
+
+Every table lives in the `storyflow` Postgres schema (not `public`) and is prefixed `sf_`:
+
+| Table | Purpose |
+|---|---|
+| `storyflow.sf_users` | user profile (id = Supabase `auth.users.id`) |
+| `storyflow.sf_projects` | story projects |
+| `storyflow.sf_scenes` | scene breakdowns |
+| `storyflow.sf_assets` | images, audio, video, subtitles |
+| `storyflow.sf_render_jobs` | render status + progress |
+| `storyflow.sf_settings` | per-user API keys + defaults |
+
+To view in Supabase dashboard: **Table Editor → schema dropdown → storyflow**.
+
+## Queues
+
+| Queue | Used by | Status |
+|---|---|---|
+| `video-render` | `POST /api/projects/:id/render` | **Active** — fronted by `sf_render_jobs`, polled via `GET /api/render-jobs/:id` |
+| `script-generation` | — | Worker ready; route still runs inline |
+| `scene-generation` | — | Worker ready; route still runs inline |
+| `image-generation` | — | Worker ready; route still runs inline |
+| `audio-generation` | — | Worker ready; route still runs inline |
+
+Only `video-render` benefits enough from async to justify the UI polling complexity. Others are ready to be converted later by swapping the route to `queues.xxx.add(...)` instead of calling the service directly.
+
+## EC2 deployment
+
+One box runs web + worker + Redis. Recommended layout:
+
+```bash
+# On a fresh Ubuntu 22.04 EC2 instance
+sudo apt update && sudo apt install -y nodejs npm redis-server ffmpeg
+sudo systemctl enable --now redis-server
+
+git clone <repo> storyflow && cd storyflow
+npm install
+# Put production values in .env.local
+npx prisma generate
+npx prisma db push
+
+# Use pm2 (or systemd) to run both processes
+sudo npm i -g pm2
+pm2 start "npm run build && npm run start" --name storyflow-web
+pm2 start "npm run worker" --name storyflow-worker
+pm2 save && pm2 startup
+```
+
+Put nginx in front for TLS + port 80/443 → 3000.
+
 ## Production hardening notes
 
-- Add authentication before exposing project/user routes publicly.
-- Replace the fallback demo user ID with real authenticated session handling.
-- Persist uploaded audio, images, and renders in object storage such as S3/R2.
-- Expand FFmpeg filter graph generation for true timeline transitions, per-scene pan/zoom, and layered music mixing.
-- Add durable render state updates, retries, cancellation, and idempotency keys for jobs.
-- Validate all API inputs with Zod on route boundaries.
-- Add waveform generation, voice preview caching, and audio normalization.
-- Add signed asset URLs and access control for downloads.
-- Add observability, rate limiting, and audit logging around provider APIs.
-- Consider splitting image and render work into dedicated compute workers for scale.
-
-## Prompt design
-
-All OpenAI prompts live in `lib/prompts/` and all model outputs are expected to be structured JSON. This keeps prompt logic isolated and production-friendly.
-
-## Notes
-
-- Secrets are never referenced in client components.
-- Provider calls go through backend services and API routes.
-- The UI includes advanced editing surfaces in MVP form so the workflow is visible end to end.
-- Scene generation and image generation can be powered by Gemini when `GEMINI_API_KEY` is configured.
+- Encrypt AI keys in `sf_settings` at rest (currently plaintext)
+- Add rate limiting per user on generation endpoints
+- Add signed Storage URLs with short TTL for asset downloads (already done for render outputs)
+- Move FFmpeg concurrency onto a dedicated worker with more CPU if you need parallel renders
+- Turn on Supabase Auth email confirmation in production

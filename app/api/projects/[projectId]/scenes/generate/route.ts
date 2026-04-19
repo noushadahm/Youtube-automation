@@ -1,16 +1,21 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { ProjectService, SceneService } from "@/lib/services";
+import { requireUser, UnauthorizedError } from "@/lib/auth";
+import { getUserAiKeys } from "@/lib/user-keys";
 
 const projectService = new ProjectService();
-const sceneService = new SceneService();
 
 export async function POST(
   _request: Request,
   { params }: { params: { projectId: string } }
 ) {
   try {
-    const project = await projectService.getProjectById(params.projectId);
+    const user = await requireUser();
+    const keys = await getUserAiKeys(user.id);
+    const sceneService = new SceneService(keys.geminiApiKey);
+
+    const project = await projectService.getProjectById(params.projectId, user.id);
 
     if (!project) {
       return NextResponse.json({ error: "Project not found" }, { status: 404 });
@@ -22,9 +27,7 @@ export async function POST(
 
     await db.project.update({
       where: { id: params.projectId },
-      data: {
-        status: "generating_scenes"
-      }
+      data: { status: "generating_scenes" }
     });
 
     const result = await sceneService.planScenes({
@@ -41,13 +44,14 @@ export async function POST(
 
     await db.project.update({
       where: { id: params.projectId },
-      data: {
-        status: "ready_to_render"
-      }
+      data: { status: "ready_to_render" }
     });
 
     return NextResponse.json({ scenes });
   } catch (error) {
+    if (error instanceof UnauthorizedError) {
+      return NextResponse.json({ error: error.message }, { status: 401 });
+    }
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Scene generation failed" },
       { status: 500 }

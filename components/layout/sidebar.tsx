@@ -3,21 +3,22 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useSearchParams } from "next/navigation";
-import { Clapperboard, Film, LayoutDashboard, Mic2, PictureInPicture2, Settings2, Sparkles, UploadCloud, Wand2 } from "lucide-react";
+import { Clapperboard, Film, LayoutDashboard, Mic2, PictureInPicture2, Rocket, Settings2, Sparkles, UploadCloud, Wand2 } from "lucide-react";
 import { APP_NAME, sidebarItems } from "@/lib/constants";
 import { cn } from "@/lib/utils";
 
 const iconMap = [
   LayoutDashboard,
-  Sparkles,
-  Wand2,
-  Mic2,
-  Film,
-  PictureInPicture2,
-  Clapperboard,
-  Clapperboard,
-  UploadCloud,
-  Settings2
+  Rocket,           // Auto-Pilot
+  Sparkles,         // New Project
+  Wand2,            // Script Studio
+  Mic2,             // Voice Studio
+  Film,             // Scene Studio
+  PictureInPicture2,// Image Studio
+  Clapperboard,     // Video Editor
+  Clapperboard,     // Reel Studio
+  UploadCloud,      // Exports
+  Settings2         // Settings
 ];
 
 export function Sidebar() {
