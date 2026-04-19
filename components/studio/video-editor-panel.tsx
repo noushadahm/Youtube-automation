@@ -21,6 +21,7 @@ import {
   Download
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { useEditorStore } from "@/lib/store/editor-store";
 import { formatDuration } from "@/lib/utils";
 
@@ -465,10 +466,17 @@ export function VideoEditorPanel({ project }: VideoEditorPanelProps) {
     setAudioDuration(audioRef.current.duration || 0);
   }
 
-  // --- Scene edits ---
-  async function deleteScene(sceneId: string) {
-    if (!project) return;
-    if (!confirm("Delete this scene? Its narration and image will be lost.")) return;
+  // --- Scene + music delete confirmation state ---
+  const [pendingSceneDelete, setPendingSceneDelete] = useState<string | null>(null);
+  const [pendingMusicDelete, setPendingMusicDelete] = useState<string | null>(null);
+
+  function deleteScene(sceneId: string) {
+    setPendingSceneDelete(sceneId);
+  }
+
+  async function confirmSceneDelete() {
+    if (!project || !pendingSceneDelete) return;
+    const sceneId = pendingSceneDelete;
     setSavingSceneId(sceneId);
     try {
       const res = await fetch(`/api/projects/${project.id}/scenes/${sceneId}`, {
@@ -476,9 +484,11 @@ export function VideoEditorPanel({ project }: VideoEditorPanelProps) {
       });
       if (!res.ok) throw new Error((await res.json())?.error ?? "Delete failed");
       setSelected(null);
+      setPendingSceneDelete(null);
       router.refresh();
     } catch (e) {
       setMessage(e instanceof Error ? e.message : "Delete failed");
+      setPendingSceneDelete(null);
     } finally {
       setSavingSceneId(null);
     }
@@ -754,18 +764,24 @@ export function VideoEditorPanel({ project }: VideoEditorPanelProps) {
     }
   }
 
-  async function deleteMusicTrack(assetId: string) {
-    if (!project) return;
-    if (!confirm("Remove this audio track?")) return;
+  function deleteMusicTrack(assetId: string) {
+    setPendingMusicDelete(assetId);
+  }
+
+  async function confirmMusicDelete() {
+    if (!project || !pendingMusicDelete) return;
+    const assetId = pendingMusicDelete;
     try {
       const res = await fetch(`/api/projects/${project.id}/music/${assetId}`, {
         method: "DELETE"
       });
       if (!res.ok) throw new Error((await res.json())?.error ?? "Delete failed");
       setSelected(null);
+      setPendingMusicDelete(null);
       router.refresh();
     } catch (e) {
       setMessage(e instanceof Error ? e.message : "Delete failed");
+      setPendingMusicDelete(null);
     }
   }
 
@@ -1135,6 +1151,39 @@ export function VideoEditorPanel({ project }: VideoEditorPanelProps) {
           preload="metadata"
         />
       ) : null}
+      {/* Confirm dialogs — themed replacements for window.confirm() */}
+      <ConfirmDialog
+        open={pendingSceneDelete !== null}
+        variant="destructive"
+        title="Delete this scene?"
+        description="The scene, its narration, subtitle, and image will be lost."
+        bullets={[
+          "Scene order is compacted automatically",
+          "The audio asset stays (it's shared with other scenes)"
+        ]}
+        danger="This cannot be undone."
+        confirmLabel="Delete scene"
+        busy={savingSceneId !== null}
+        onConfirm={confirmSceneDelete}
+        onCancel={() => {
+          if (savingSceneId) return;
+          setPendingSceneDelete(null);
+        }}
+      />
+      <ConfirmDialog
+        open={pendingMusicDelete !== null}
+        variant="destructive"
+        title="Remove this audio track?"
+        description="The track will no longer be mixed into the final render."
+        bullets={[
+          "The underlying audio file stays in your Gallery",
+          "Other tracks on the timeline are unaffected"
+        ]}
+        confirmLabel="Remove track"
+        onConfirm={confirmMusicDelete}
+        onCancel={() => setPendingMusicDelete(null)}
+      />
+
       {/* One gated audio element per music / SFX track — no looping; the
           per-track sync effect above handles play/pause/seek. */}
       {musicAssets.map((m) => (
