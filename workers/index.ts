@@ -344,7 +344,7 @@ const renderWorker = new Worker<RenderJobPayload>(
         hookText: hookText ?? project.hookText ?? null,
         compressForUpload: Boolean(compressForUpload),
         coverImagePath: localCoverPath,
-        coverDurationSec: typeof coverDurationSec === "number" ? coverDurationSec : 3
+        coverDurationSec: typeof coverDurationSec === "number" ? coverDurationSec : 0.9
       });
 
       await setProgress(85);

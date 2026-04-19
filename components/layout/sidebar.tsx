@@ -3,7 +3,19 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useSearchParams } from "next/navigation";
-import { Clapperboard, Film, LayoutDashboard, Mic2, PictureInPicture2, Rocket, Settings2, Sparkles, UploadCloud, Wand2 } from "lucide-react";
+import {
+  Clapperboard,
+  Film,
+  Images,
+  LayoutDashboard,
+  Mic2,
+  PictureInPicture2,
+  Rocket,
+  Settings2,
+  Sparkles,
+  UploadCloud,
+  Wand2
+} from "lucide-react";
 import { APP_NAME, sidebarItems } from "@/lib/constants";
 import { cn } from "@/lib/utils";
 
@@ -11,6 +23,7 @@ const iconMap = [
   LayoutDashboard,
   Rocket,           // Auto-Pilot
   Sparkles,         // New Project
+  Images,           // Gallery
   Wand2,            // Script Studio
   Mic2,             // Voice Studio
   Film,             // Scene Studio

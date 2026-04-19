@@ -3,6 +3,7 @@ import { ArrowLeft, Settings as SettingsIcon } from "lucide-react";
 import { getActiveProject } from "@/lib/project-context";
 import { getCurrentUser } from "@/lib/auth";
 import { VideoEditorPanel } from "@/components/studio/video-editor-panel";
+import { ProjectSwitcher } from "@/components/studio/project-switcher";
 
 export const dynamic = "force-dynamic";
 
@@ -30,12 +31,11 @@ export default async function VideoEditorPage({
           </Link>
           <span className="mx-1 h-4 w-px bg-white/10" />
           <p className="text-xs uppercase tracking-[0.3em] text-cyan-300/80">Video Editor</p>
-          {project ? (
-            <>
-              <span className="mx-1 h-4 w-px bg-white/10" />
-              <p className="truncate text-sm font-semibold">{project.title}</p>
-            </>
-          ) : null}
+          <span className="mx-1 h-4 w-px bg-white/10" />
+          <ProjectSwitcher
+            currentProjectId={project?.id ?? null}
+            currentTitle={project?.title ?? "No project selected"}
+          />
         </div>
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
           {user?.email ? <span className="hidden md:inline">{user.email}</span> : null}

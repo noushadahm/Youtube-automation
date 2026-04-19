@@ -6,6 +6,7 @@ export const sidebarItems = [
   { href: "/", label: "Dashboard" },
   { href: "/auto-pilot", label: "Auto-Pilot" },
   { href: "/projects/new", label: "New Project" },
+  { href: "/gallery", label: "Gallery" },
   { href: "/script-studio", label: "Script Studio" },
   { href: "/voice-studio", label: "Voice Studio" },
   { href: "/scene-studio", label: "Scene Studio" },

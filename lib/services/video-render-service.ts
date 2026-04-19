@@ -172,32 +172,39 @@ function buildSceneFilter(
   inputIndex: number,
   outLabel: string,
   width: number,
-  height: number
+  height: number,
+  /**
+   * Extra seconds of content to produce beyond `durationSec`. This creates
+   * the "tail" that the xfade filter blends with the next scene — without
+   * it, xfade has to eat into the scene's own on-screen time, making the
+   * final video shorter than the sum of scene durations. See the main
+   * renderProject loop for why we pass this in.
+   */
+  tailSec = 0
 ): string {
   const dur = Math.max(0.5, scene.durationSec);
+  const totalDur = dur + Math.max(0, tailSec);
 
   if (scene.videoClipPath) {
-    // AI video clip — pad/scale to canvas, enforce FPS, trim to scene duration.
-    // The trailing `fps=${FPS}` after setpts is critical: xfade requires
-    // constant-frame-rate streams with well-defined timestamps. Without it,
-    // FFmpeg reports "inputs needs to be a constant frame rate; current rate
-    // of 1/0 is invalid".
     return (
       `[${inputIndex}:v]` +
       `scale=${width}:${height}:force_original_aspect_ratio=decrease,` +
       `pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2:color=black,` +
-      `setsar=1,fps=${FPS},trim=duration=${dur},setpts=PTS-STARTPTS,fps=${FPS}` +
+      `setsar=1,fps=${FPS},trim=duration=${totalDur},setpts=PTS-STARTPTS,fps=${FPS}` +
       `[${outLabel}]`
     );
   }
 
   // Still image path. Oversample so zoompan doesn't pixelate on zoom-in.
+  // Motion animates over the full on-screen time `dur` — the tail simply
+  // holds the last frame steady (good enough for a 0.9s fade into the next
+  // scene without visible motion jitter).
   const zoom = buildZoompan(scene.cameraMotion, dur, width, height);
   return (
     `[${inputIndex}:v]` +
     `scale=${width * 2}:${height * 2}:force_original_aspect_ratio=increase,` +
     `crop=${width * 2}:${height * 2},` +
-    `${zoom},setsar=1,trim=duration=${dur},setpts=PTS-STARTPTS,fps=${FPS}` +
+    `${zoom},setsar=1,trim=duration=${totalDur},setpts=PTS-STARTPTS,fps=${FPS}` +
     `[${outLabel}]`
   );
 }
@@ -230,9 +237,10 @@ export class VideoRenderService {
     }
 
     // If a cover image is provided, prepend it as an extra "scene 0" with a
-    // default 3-second zoom-in. Audio stays aligned by delaying the narration
-    // start below.
-    const coverDur = Math.max(1, input.coverDurationSec ?? 3);
+    // Cover is a brief branded fade-in, not a full standalone scene. It
+    // blends into scene 1 over the xfade duration, so the cover is visible
+    // during the fade only — quick intro beat.
+    const coverDur = Math.max(0.3, input.coverDurationSec ?? 0.9);
     const scenesWithCover: RenderScene[] = input.coverImagePath
       ? [
           {
@@ -291,11 +299,19 @@ export class VideoRenderService {
     const videoFilters: string[] = [];
 
     // Per-scene streams → [v0], [v1], ...
+    // Each scene (except the last) gets an extra `tail` of content equal to
+    // its outgoing transition duration, so xfade can blend into the next
+    // scene without eating into this scene's on-screen time. This makes the
+    // final video duration exactly sum(scene.durationSec).
     scenesWithCover.forEach((scene, i) => {
-      videoFilters.push(buildSceneFilter(scene, i, `v${i}`, width, height));
+      const isLast = i === scenesWithCover.length - 1;
+      const tail = isLast ? 0 : xfadeDuration(scene.transition);
+      videoFilters.push(buildSceneFilter(scene, i, `v${i}`, width, height, tail));
     });
 
-    // Chain transitions using xfade. Cumulative offset = sum(scene durations) - sum(transitions so far).
+    // Chain transitions using xfade. Each xfade starts AT the end of the
+    // current scene's on-screen time — the tail we just added feeds the
+    // transition window.
     let chainLabel = "v0";
     let offset = 0;
     if (scenesWithCover.length > 1) {
@@ -304,7 +320,10 @@ export class VideoRenderService {
         const next = scenesWithCover[i + 1];
         const xt = xfadeType(current.transition);
         const xd = xfadeDuration(current.transition);
-        offset += current.durationSec - xd; // transition starts this much before the next scene
+        // offset = cumulative on-screen time so far. xfade begins at this
+        // moment in the combined output, blending tails of current into
+        // start of next for `xd` seconds.
+        offset += current.durationSec;
         const outLabel = i === scenesWithCover.length - 2 ? "vconcat" : `vx${i}`;
         videoFilters.push(
           `[${chainLabel}][v${i + 1}]xfade=transition=${xt}:duration=${xd}:offset=${offset.toFixed(3)}[${outLabel}]`

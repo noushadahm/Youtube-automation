@@ -70,7 +70,7 @@ export async function POST(
       compressForUpload: Boolean(body.compressForUpload),
       includeCover: body.includeCover !== false, // default ON if a cover exists
       coverDurationSec:
-        typeof body.coverDurationSec === "number" ? body.coverDurationSec : 3
+        typeof body.coverDurationSec === "number" ? body.coverDurationSec : 0.9
     });
 
     return NextResponse.json(
